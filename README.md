@@ -1,0 +1,184 @@
+# @workoutx/sdk — WorkoutX Fitness & Exercise API SDK for JavaScript / TypeScript
+
+[![npm version](https://img.shields.io/npm/v/@workoutx/sdk.svg)](https://www.npmjs.com/package/@workoutx/sdk)
+[![npm downloads](https://img.shields.io/npm/dm/@workoutx/sdk.svg)](https://www.npmjs.com/package/@workoutx/sdk)
+[![license](https://img.shields.io/npm/l/@workoutx/sdk.svg)](./LICENSE)
+
+The official TypeScript/JavaScript SDK for the [**WorkoutX API**](https://workoutxapp.com) —
+1,300+ exercises with form GIFs, a workout generator, supplement intelligence, and AI
+body-scan analysis, all behind one simple key. A modern, type-safe
+[ExerciseDB alternative](https://workoutxapp.com/exercisedb-alternative.html) for fitness apps.
+
+> 🔑 **[Get a free API key](https://workoutxapp.com/dashboard.html)** · 🌐 **[workoutxapp.com](https://workoutxapp.com)** · 📚 **[API docs](https://workoutxapp.com/docs.html)**
+
+One client covers **all** products:
+
+- **Exercises** — exercises, GIFs, workout generator, supplements (API-key auth)
+- **Body Scan** — credits, history, keys, checkout (logged-in user / Bearer auth)
+- **Account & Billing** — register/login, API-key management, password reset, webhooks, subscription checkout (Bearer auth)
+
+Works in Node.js 18+ and modern browsers. Zero runtime dependencies (uses native `fetch`).
+
+## Install
+
+```bash
+npm install @workoutx/sdk
+```
+
+## Quick start
+
+```ts
+import { WorkoutX } from "@workoutx/sdk";
+
+const wx = new WorkoutX({
+  apiKey: "wx_your_key_here",        // exercises / gifs / workout / supplements
+  scan: { token: "eyJ..." },          // body scan (optional)
+});
+
+// Exercises
+const page    = await wx.exercises.list({ limit: 20 });
+const byId    = await wx.exercises.get("0001");
+const lunges  = await wx.exercises.byName("lunges");   // ← name lookup
+const similar = await wx.exercises.similar("0001");
+const alts    = await wx.exercises.alternatives("0001", { equipment: "dumbbell" });
+
+// GIFs (binary)
+const bytes = await wx.gifs.get("0001");                // ArrayBuffer
+const src   = wx.gifUrl("0001");                        // for <img src>
+
+// Workout & supplements
+const workout = await wx.workout.generate({ goal: "hypertrophy", days: 4 });
+const stack   = await wx.supplements.stack({ goal: "cut" });
+
+// Body Scan
+const credits = await wx.scan.credits();
+const history = await wx.scan.history({ limit: 10 });
+
+// Account & billing
+const { token } = await wx.auth.login("user@example.com", "•••"); // token cached for scan/auth/billing
+const me        = await wx.auth.me();
+const keys      = await wx.auth.listKeys();
+const sub       = await wx.billing.status();
+const checkout  = await wx.billing.checkout("pro", "yearly");      // → { url } to redirect to Stripe
+```
+
+## Authentication
+
+The two products use different credentials — the SDK handles both transparently.
+
+| Product | Endpoints | Credential |
+|---------|-----------|------------|
+| Exercises | `exercises`, `gifs`, `workout`, `supplements` | `apiKey` (`wx_...`) → `X-WorkoutX-Key` header |
+| Body Scan | `scan.*` | Bearer JWT |
+
+For Body Scan you can either pass a ready token or let the SDK log in for you:
+
+```ts
+// Option A — you already have a token
+new WorkoutX({ apiKey, scan: { token: "eyJ..." } });
+
+// Option B — auto-login on first scan call, then cache the token
+new WorkoutX({ apiKey, scan: { email: "user@example.com", password: "•••" } });
+```
+
+You can also set/replace the token later:
+
+```ts
+wx.setScanToken("eyJ...");
+```
+
+## Avoiding the "name as ID" 404
+
+`exercises.get(id)` expects an exact numeric ID (IDs have gaps and are **not**
+sequential). Passing a human name like `"lunges"` returns 404. Use `byName`, or
+the convenience resolver that tries an ID first then falls back to a name search:
+
+```ts
+const ex = await wx.exercises.find("lunges"); // Exercise | null
+```
+
+## Error handling
+
+Every non-2xx response throws a `WorkoutXError` with structured fields:
+
+```ts
+import { WorkoutXError } from "@workoutx/sdk";
+
+try {
+  await wx.exercises.get("not-a-real-id");
+} catch (err) {
+  if (err instanceof WorkoutXError) {
+    err.status;        // 404
+    err.code;          // "Not Found"
+    err.message;       // human-readable
+    err.tip;           // hint from the API, when present
+    err.isNotFound;    // boolean helpers: isAuthError, isRateLimited, isNotFound
+  }
+}
+```
+
+Transient failures (HTTP 429 and 5xx, plus network errors) are retried
+automatically with exponential backoff, honoring the `Retry-After` header.
+
+## Options
+
+```ts
+new WorkoutX({
+  apiKey,
+  scan,
+  baseUrl: "https://api.workoutxapp.com", // default
+  timeout: 30_000,                         // ms, default 30s
+  maxRetries: 2,                           // default 2
+  headers: { "X-Trace": "abc" },           // extra headers on every request
+  fetch: customFetch,                      // custom fetch impl (optional)
+});
+```
+
+## API surface
+
+- `wx.exercises` — `list`, `get`, `byName`, `byBodyPart`, `byTarget`, `byEquipment`, `search`, `similar`, `alternatives`, `calories`, `changes`, `find`, `bodyPartList`, `targetList`, `equipmentList`, `secondaryMuscleList`
+- `wx.gifs` — `get`, `url`
+- `wx.workout` — `generate`, `program`
+- `wx.supplements` — `list`, `filters`, `stack`, `forExercise`, `get`
+- `wx.scan` — `credits`, `me`, `history`, `listKeys`, `createKey`, `deleteKey`, `checkout`, `packs`
+- `wx.auth` — `register`, `login`, `me`, `updateMe`, `changePassword`, `listKeys`, `createKey`, `deleteKey`, `updateKeyPlan`, `usage`, `forgotPassword`, `resetPassword`, `verifyEmail`, `resendVerification`, `getWebhook`, `setWebhook`, `testWebhook`
+- `wx.billing` — `status`, `checkout`, `portal`
+
+> `auth`, `billing`, and `scan` use the same Bearer token. A successful
+> `auth.login()` caches it, so subsequent `scan.*` / `billing.*` calls work
+> without re-supplying credentials. Google OAuth (`/v1/auth/google`) is a
+> browser-redirect flow and is intentionally not wrapped in the SDK.
+
+> Some endpoints are plan-gated (e.g. `search`, `workout.generate`,
+> `supplements.stack`). Calling them on a plan without the feature returns a
+> `WorkoutXError` with a `403`/upgrade message.
+
+## About WorkoutX
+
+[WorkoutX](https://workoutxapp.com) is a developer-first **fitness API** — a modern
+**ExerciseDB alternative** that bundles everything you need to build workout, training,
+and health apps behind a single key:
+
+- 🏋️ **1,300+ exercises** with animated form **GIFs**, target & secondary muscles, equipment, and step-by-step instructions
+- 🧠 **Workout generator** and multi-week training **programs**
+- 💊 **Supplement intelligence** — recommended stacks per goal and per exercise
+- 📸 **AI Body Scan** — body-fat %, measurements, and composition from photos
+- 🔌 Clean REST API with **official SDKs** for JavaScript, Python, Flutter, and Swift
+
+### Links
+
+- 🌐 Website — https://workoutxapp.com
+- 🔑 Get a free API key — https://workoutxapp.com/dashboard.html
+- 📚 API documentation — https://workoutxapp.com/docs.html
+- 🆚 ExerciseDB alternative — https://workoutxapp.com/exercisedb-alternative.html
+
+### Official SDKs
+
+- **JavaScript / TypeScript** — [`@workoutx/sdk`](https://www.npmjs.com/package/@workoutx/sdk) (npm)
+- **Python** — [`workoutx-sdk`](https://pypi.org/project/workoutx-sdk/) (PyPI)
+- **Flutter / Dart** — [`workoutx_sdk`](https://pub.dev/packages/workoutx_sdk) (pub.dev)
+- **Swift** — [workoutx-sdk-swift](https://github.com/furkanuruk/workoutx-sdk-swift) (Swift Package Manager)
+
+## License
+
+MIT

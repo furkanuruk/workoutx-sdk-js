@@ -1,0 +1,58 @@
+{
+  "name": "@workoutx/sdk",
+  "version": "0.1.0",
+  "description": "Official TypeScript/JavaScript SDK for the WorkoutX API — exercises, GIFs, workouts, supplements, and body scan.",
+  "license": "MIT",
+  "author": "WorkoutX",
+  "homepage": "https://workoutxapp.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/furkanuruk/workoutx-sdk-js.git"
+  },
+  "bugs": {
+    "url": "https://github.com/furkanuruk/workoutx-sdk-js/issues"
+  },
+  "keywords": [
+    "workoutx",
+    "fitness",
+    "exercise",
+    "exercisedb",
+    "workout",
+    "supplements",
+    "body-scan",
+    "api",
+    "sdk"
+  ],
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^2.0.0"
+  }
+}
