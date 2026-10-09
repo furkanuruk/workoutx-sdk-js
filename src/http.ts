@@ -106,8 +106,10 @@ export class HttpClient {
       // Retry on 429 + 5xx (transient).
       if ((res.status === 429 || res.status >= 500) && attempt < this.cfg.maxRetries) {
         const retryAfter = parseRetryAfter(res.headers.get("retry-after"));
-        await sleep(retryAfter ?? backoffMs(attempt));
-        continue;
+        if (isRetryable(res, retryAfter)) {
+          await sleep(retryAfter ?? backoffMs(attempt));
+          continue;
+        }
       }
 
       if (!res.ok) throw await toError(res, path);
@@ -139,6 +141,20 @@ export class HttpClient {
 function backoffMs(attempt: number): number {
   // 250ms, 500ms, 1s ... with jitter.
   return Math.min(2000, 250 * 2 ** attempt) + Math.random() * 100;
+}
+
+/** Longest server-requested wait we will sleep through before retrying. */
+const MAX_RETRY_AFTER_MS = 60_000;
+
+/**
+ * A 429 is only worth retrying when it is a per-minute rate limit. An exhausted
+ * monthly quota (`X-Quota-Exceeded: true`) cannot succeed until the quota
+ * resets — or never, on Free — so retrying just adds more rejected requests.
+ * Its Retry-After can be weeks away, which we must not sleep through either.
+ */
+function isRetryable(res: Response, retryAfterMs: number | undefined): boolean {
+  if (res.headers.get("x-quota-exceeded") === "true") return false;
+  return retryAfterMs === undefined || retryAfterMs <= MAX_RETRY_AFTER_MS;
 }
 
 function parseRetryAfter(header: string | null): number | undefined {

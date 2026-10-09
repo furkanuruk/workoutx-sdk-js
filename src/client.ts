@@ -6,6 +6,7 @@ import { SupplementsResource } from "./resources/supplements.js";
 import { ScanResource } from "./resources/scan.js";
 import { AuthResource } from "./resources/auth.js";
 import { BillingResource } from "./resources/billing.js";
+import { V2Resource } from "./resources/v2.js";
 
 export const DEFAULT_BASE_URL = "https://api.workoutxapp.com";
 
@@ -53,6 +54,8 @@ export class WorkoutX {
   readonly scan: ScanResource;
   readonly auth: AuthResource;
   readonly billing: BillingResource;
+  /** API v2: the new exercise catalog with signed, expiring media links. */
+  readonly v2: V2Resource;
 
   private readonly http: HttpClient;
   private readonly baseUrl: string;
@@ -93,6 +96,7 @@ export class WorkoutX {
     // re-supplying credentials.
     this.auth = new AuthResource(this.http, (token) => this.setScanToken(token));
     this.billing = new BillingResource(this.http);
+    this.v2 = new V2Resource(this.http);
   }
 
   /** Build a direct GIF URL with the API key baked into the query string. */

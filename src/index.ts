@@ -23,3 +23,13 @@ export { ScanResource } from "./resources/scan.js";
 export { AuthResource } from "./resources/auth.js";
 export type { AuthLoginResult } from "./resources/auth.js";
 export { BillingResource } from "./resources/billing.js";
+export { V2Resource } from "./resources/v2.js";
+export type {
+  ExerciseV2,
+  MediaLinks,
+  MuscleV2,
+  V2SearchParams,
+  V2Page,
+  LegacyLookup,
+  VocabEntry,
+} from "./resources/v2.js";

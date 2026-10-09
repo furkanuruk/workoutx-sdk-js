@@ -44,6 +44,32 @@ describe("http behaviour", () => {
     expect(n).toBe(2);
   });
 
+  it("does not retry a 429 for an exhausted monthly quota", async () => {
+    const fetch = mockFetch({
+      status: 429,
+      headers: { "X-Quota-Exceeded": "true", "Retry-After": "1209600" },
+      json: { error: "Monthly Quota Exceeded", message: "out of quota" },
+    });
+    const wx = new WorkoutX({ apiKey: "wx_test", maxRetries: 2, fetch });
+
+    await expect(wx.exercises.list()).rejects.toMatchObject({ status: 429 });
+    expect(fetch.calls).toHaveLength(1);
+  });
+
+  it("still retries a per-minute rate-limit 429", async () => {
+    let n = 0;
+    const fetch = mockFetch(() => {
+      n += 1;
+      return n < 2
+        ? { status: 429, headers: { "Retry-After": "0" }, json: { error: "Rate Limit Exceeded" } }
+        : { json: { ok: true } };
+    });
+    const wx = new WorkoutX({ apiKey: "wx_test", maxRetries: 2, fetch });
+
+    expect(await wx.exercises.list()).toEqual({ ok: true });
+    expect(n).toBe(2);
+  });
+
   it("surfaces a connection error after exhausting retries", async () => {
     const fetch = (() => {
       throw new TypeError("network down");
