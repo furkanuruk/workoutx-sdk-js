@@ -97,6 +97,58 @@ the convenience resolver that tries an ID first then falls back to a name search
 const ex = await wx.exercises.find("lunges"); // Exercise | null
 ```
 
+## API v2
+
+`wx.v2` is the new exercise catalog: 1,900+ movements as 2,700+ clips (male and
+female models are separate exercises, linked by `counterpartId`), with 720p MP4
+media at 30 fps. The API key is always sent in the `X-WorkoutX-Key` header.
+
+Media links are signed and expire after about 24 hours: store exercise ids,
+never media URLs, and call `freshMedia(id)` when you display an exercise. It
+reuses the links of every exercise the SDK has already received (from `list`,
+`get`, `similar`, `alternatives`, `workout.generate` and `workout.program`)
+until they are close to expiry, and only then makes a request.
+
+```ts
+// Catalog. lang: en, tr, de, es, fr, zh-SG, zh-HK (filters stay English)
+const page   = await wx.v2.list({ bodyPart: "chest", model: "female", lang: "de" });
+const bench  = await wx.v2.get("ex_SAWOOH", { lang: "tr" });  // Barbell Bench Press
+const fromV1 = await wx.v2.legacy("0025");                    // v1 id → v2 exercise
+
+// Similar exercises, alternatives and calories
+const similar = await wx.v2.similar("ex_SAWOOH", { limit: 5 }); // { exerciseId, model, total, limit, offset, results }
+for (const ex of similar.results) console.log(ex.name, ex.score); // full v2 exercises, best first
+const alts = await wx.v2.alternatives("ex_SAWOOH", { equipment: "dumbbell", model: "any" });
+const kcal = await wx.v2.calories("ex_SAWOOH", { weightKg: 80, minutes: 20 }); // kcal.totalKcal
+
+// Workout generator and multi-week programs (arrays are sent comma-separated)
+const workout = await wx.v2.workout.generate({
+  goal: "muscle_gain", duration: 45, equipment: ["barbell", "dumbbell"],
+  bodyFocus: ["chest", "back"], exclude: ["ex_WOZL6H"], model: "female",
+});
+const program = await wx.v2.workout.program({ goal: "strength", weeks: 8, daysPerWeek: 4 });
+
+for (const { exercise, sets, reps } of workout.exercises) {
+  const links = await wx.v2.freshMedia(exercise.id); // no request: cached from generate()
+  console.log(exercise.name, sets, reps, links?.mp4);
+}
+
+// Supplements (take v2 exercise ids)
+const supps = await wx.v2.supplements.list({ goal: "strength", evidence: "strong" });
+const picks = await wx.v2.supplements.forExercise("ex_SAWOOH", { limit: 3 });
+const stack = await wx.v2.supplements.stack({ goal: "muscle_gain", level: "essential" });
+```
+
+| Feature | Plans |
+|---------|-------|
+| `similar`, `alternatives`, `calories` | all plans |
+| Joint & Rehab filters on `list` (`jointFocus`, `intensityLevel`, `movementTag`) | Growth, Scale (legacy Ultra) |
+| `workout.generate`, `supplements.*` except `stack` | Growth, Scale (legacy Pro, Ultra) |
+| `workout.program`, `supplements.stack` | Scale (legacy Ultra) |
+
+On a plan without the feature, the call throws a `WorkoutXError` with status
+`403`; `err.body.requiredPlan` names the cheapest plan that has it.
+
 ## Error handling
 
 Every non-2xx response throws a `WorkoutXError` with structured fields:
@@ -143,6 +195,9 @@ new WorkoutX({
 - `wx.scan` — `credits`, `me`, `history`, `listKeys`, `createKey`, `deleteKey`, `checkout`, `packs`
 - `wx.auth` — `register`, `login`, `me`, `updateMe`, `changePassword`, `listKeys`, `createKey`, `deleteKey`, `updateKeyPlan`, `usage`, `forgotPassword`, `resetPassword`, `verifyEmail`, `resendVerification`, `getWebhook`, `setWebhook`, `testWebhook`
 - `wx.billing` — `status`, `checkout`, `portal`
+- `wx.v2` — `list`, `get`, `media`, `freshMedia`, `legacy`, `similar`, `alternatives`, `calories`, `bodyParts`, `targets`, `equipment`, `categories`, `muscles`
+- `wx.v2.workout` — `generate`, `program`
+- `wx.v2.supplements` — `list`, `filters`, `get`, `forExercise`, `stack`
 
 > `auth`, `billing`, and `scan` use the same Bearer token. A successful
 > `auth.login()` caches it, so subsequent `scan.*` / `billing.*` calls work

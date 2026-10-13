@@ -23,13 +23,36 @@ export { ScanResource } from "./resources/scan.js";
 export { AuthResource } from "./resources/auth.js";
 export type { AuthLoginResult } from "./resources/auth.js";
 export { BillingResource } from "./resources/billing.js";
-export { V2Resource } from "./resources/v2.js";
+export { V2Resource, V2WorkoutResource, V2SupplementsResource } from "./resources/v2.js";
 export type {
   ExerciseV2,
   MediaLinks,
   MuscleV2,
+  V2Lang,
+  V2LangParams,
   V2SearchParams,
   V2Page,
   LegacyLookup,
   VocabEntry,
+  V2SimilarParams,
+  V2AlternativesParams,
+  RankedExerciseV2,
+  V2RankedPage,
+  V2CaloriesParams,
+  CalorieEstimateV2,
+  V2WorkoutGoal,
+  V2WorkoutLevel,
+  V2WorkoutSplit,
+  V2WorkoutGenerateParams,
+  V2WorkoutProgramParams,
+  WorkoutExerciseV2,
+  WorkoutStepV2,
+  WorkoutV2,
+  ProgramDayV2,
+  ProgramWeekV2,
+  ProgramV2,
+  V2SupplementListParams,
+  V2SupplementPage,
+  V2ForExerciseParams,
+  V2SupplementStackParams,
 } from "./resources/v2.js";
