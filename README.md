@@ -121,16 +121,25 @@ for (const ex of similar.results) console.log(ex.name, ex.score); // full v2 exe
 const alts = await wx.v2.alternatives("ex_SAWOOH", { equipment: "dumbbell", model: "any" });
 const kcal = await wx.v2.calories("ex_SAWOOH", { weightKg: 80, minutes: 20 }); // kcal.totalKcal
 
-// Workout generator and multi-week programs (arrays are sent comma-separated)
-const workout = await wx.v2.workout.generate({
-  goal: "muscle_gain", duration: 45, equipment: ["barbell", "dumbbell"],
-  bodyFocus: ["chest", "back"], exclude: ["ex_WOZL6H"], model: "female",
+// Workout sessions (arrays are sent comma-separated)
+const session = await wx.v2.workout.generate({
+  goal: "muscle_gain", duration: 45, equipment: "home", // or ["dumbbell", "bench"]; presets gym, home, bodyweight
+  split: "upper", avoidJoints: ["shoulder"], format: "superset", model: "female",
 });
-const program = await wx.v2.workout.program({ goal: "strength", weeks: 8, daysPerWeek: 4 });
+for (const step of session.warmup.items) console.log(step.exercise.name, step.durationSeconds);
+for (const x of session.exercises) {
+  // block "C1" + "C2" = a superset; role: main, secondary, accessory, core, conditioning, mobility
+  const links = await wx.v2.freshMedia(x.exercise.id); // no request: cached from generate()
+  console.log(x.block, x.exercise.name, x.sets, x.reps ?? `${x.durationSeconds}s`, x.rir, x.cue, links?.mp4);
+}
 
-for (const { exercise, sets, reps } of workout.exercises) {
-  const links = await wx.v2.freshMedia(exercise.id); // no request: cached from generate()
-  console.log(exercise.name, sets, reps, links?.mp4);
+// Multi-week programs: exercises reference exerciseLibrary by id
+const program = await wx.v2.workout.program({ goal: "strength", weeks: 12, daysPerWeek: 4, seed: "plan-1" });
+const library = new Map(program.exerciseLibrary.map((e) => [e.id, e]));
+for (const week of program.program) {
+  for (const day of week.days) {
+    for (const x of day.exercises) console.log(week.week, week.phase, day.weekday, library.get(x.exerciseId)?.name, x.sets, x.reps);
+  }
 }
 
 // Supplements (take v2 exercise ids)
@@ -138,6 +147,24 @@ const supps = await wx.v2.supplements.list({ goal: "strength", evidence: "strong
 const picks = await wx.v2.supplements.forExercise("ex_SAWOOH", { limit: 3 });
 const stack = await wx.v2.supplements.stack({ goal: "muscle_gain", level: "essential" });
 ```
+
+A session (`workout.generate`) has a `summary`, a `warmup` (with `rampUp` sets
+before the first main lift), `exercises` and a `cooldown`. Each exercise has a
+`block` ("A", "B", "C1"/"C2" for a superset), `role`, movement `pattern`,
+`sets`, `reps` or `durationSeconds`, `restSeconds`, `rir`, `tempo`, `load`, a
+form `cue`, a `rationale` and light `alternatives` (no media: `v2.get(id)` them
+when the user swaps). Circuits add `circuit` timing and `rounds`. `goal` takes
+`muscle_gain`, `strength`, `fat_loss`, `endurance`, `mobility` or
+`general_fitness`; `duration` is 15 to 120 minutes; `avoidJoints` takes `knee`,
+`shoulder`, `lumbar_spine`, `elbow`, `wrist`, `hip`, `ankle`; `format` is
+`auto`, `straight`, `superset` or `circuit`.
+
+A program (`workout.program`, 2 to 16 `weeks`, `seed` for a repeatable plan)
+has a `schedule`, a `progressionModel`, `blocks` with deload weeks,
+`weeklyVolume` per muscle group, the session templates (`sessions`) and the
+weeks (`program`). Their exercises are light references by `exerciseId`; each
+exercise appears once, with media, in `exerciseLibrary`, and `freshMedia`
+reuses those links. Programs take no `split`, `bodyFocus` or `exclude`.
 
 | Feature | Plans |
 |---------|-------|

@@ -185,25 +185,53 @@ export interface CalorieEstimateV2 {
   lang?: V2Lang;
 }
 
-export type V2WorkoutGoal = "muscle_gain" | "strength" | "fat_loss" | "endurance" | "mobility";
+export type V2WorkoutGoal = "muscle_gain" | "strength" | "fat_loss" | "endurance" | "mobility" | "general_fitness";
 export type V2WorkoutLevel = "beginner" | "intermediate" | "advanced";
+/**
+ * Session templates for {@link V2WorkoutGenerateParams.split}. The `_b` and `_c`
+ * variants lead with other lifts, for a second or third day of the same split.
+ * v1's "push_pull_legs" and "upper_lower" still work.
+ */
 export type V2WorkoutSplit =
-  | "full_body" | "upper" | "lower" | "push" | "pull" | "legs" | "push_pull_legs" | "upper_lower" | "core";
+  | "full_body" | "full_body_b" | "full_body_c"
+  | "upper" | "upper_b" | "lower" | "lower_b"
+  | "push" | "push_b" | "pull" | "pull_b" | "legs" | "legs_b"
+  | "core" | "conditioning" | "mobility"
+  | "push_pull_legs" | "upper_lower";
+/** Joints for `avoidJoints`. General guidance, not medical advice. */
+export type V2WorkoutJoint = "knee" | "shoulder" | "lumbar_spine" | "elbow" | "wrist" | "hip" | "ankle";
+/**
+ * How exercises are grouped. "auto" (default): circuit for fat_loss and
+ * endurance, straight sets for strength and mobility, otherwise supersets for
+ * sessions up to 60 minutes.
+ */
+export type V2WorkoutFormat = "auto" | "straight" | "superset" | "circuit";
+/** The format a response actually uses (never "auto"). */
+export type V2WorkoutResolvedFormat = Exclude<V2WorkoutFormat, "auto">;
+export type V2WorkoutRole = "main" | "secondary" | "accessory" | "core" | "conditioning" | "mobility";
 
 /** Params for {@link V2WorkoutResource.generate}. Arrays are sent comma-separated. */
 export interface V2WorkoutGenerateParams {
   /** Default "muscle_gain". */
   goal?: V2WorkoutGoal;
-  /** Minutes, 20 to 120. Default 45. */
+  /** Minutes, 15 to 120. Default 45. */
   duration?: number;
   /** Default "intermediate". */
   level?: V2WorkoutLevel;
-  /** e.g. ["barbell", "dumbbell"] or "barbell,dumbbell". Omit for any. */
+  /**
+   * e.g. ["barbell", "dumbbell", "bench"], or a preset: "gym" (everything),
+   * "home" (body weight, dumbbell, kettlebell, band, bench) or "bodyweight".
+   * Omit for a full gym. Body weight is always allowed.
+   */
   equipment?: string | readonly string[];
-  /** Default "full_body". Ignored when `bodyFocus` is given. */
+  /** Default "full_body" ("conditioning" for fat_loss and endurance, "mobility" for mobility). Ignored when `bodyFocus` is given. */
   split?: V2WorkoutSplit;
-  /** Body parts, targets or aliases (core, legs, arms), e.g. ["chest", "back"]. */
+  /** Body parts, muscles or aliases, e.g. ["chest", "back"] or "glutes,hamstrings". Overrides `split`. */
   bodyFocus?: string | readonly string[];
+  /** Joints to protect, e.g. ["knee", "lumbar_spine"]: high-stress movements are left out, moderate ones get lighter loads. */
+  avoidJoints?: string | readonly V2WorkoutJoint[];
+  /** Default "auto". */
+  format?: V2WorkoutFormat;
   /** v2 exercise ids to leave out; their other-model clips are left out too. */
   exclude?: string | readonly string[];
   /** Same seed and params, same workout. Every response carries the seed it used. */
@@ -220,98 +248,275 @@ export interface V2WorkoutProgramParams {
   goal?: V2WorkoutGoal;
   /** Default "intermediate". */
   level?: V2WorkoutLevel;
-  /** 2 to 12. Default 4. */
+  /** 2 to 16. Default 4. */
   weeks?: number;
   /** 2 to 6; sets the weekly split. Default 3. */
   daysPerWeek?: number;
   /** Minutes per session, 20 to 120. Default 60. */
   duration?: number;
-  /** e.g. ["barbell", "dumbbell"] or "barbell,dumbbell". Omit for any. */
+  /** As for {@link V2WorkoutGenerateParams.equipment}. Omit for a full gym. */
   equipment?: string | readonly string[];
+  /** Joints to protect, e.g. ["shoulder"]. */
+  avoidJoints?: string | readonly V2WorkoutJoint[];
+  /** Default "auto". */
+  format?: V2WorkoutFormat;
+  /** Same seed and params, same program. Every response carries the seed it used. */
+  seed?: string | number;
   /** Default "male". */
   model?: "male" | "female";
   /** Translates the exercises. */
   lang?: V2Lang;
 }
 
-/** One exercise of a workout or program day. */
-export interface WorkoutExerciseV2 {
+/** A swap suggestion with the same movement pattern. No media: fetch it with `v2.get(id)` when the user swaps. */
+export interface WorkoutAlternativeV2 {
+  id: string;
+  name: string;
+  equipment: string;
+  model: "male" | "female";
+}
+
+/** Sets, reps and effort for one exercise, in a session or a program day. */
+export interface WorkoutPrescriptionV2 {
+  /** 1-based position in the session. */
   order: number;
+  /**
+   * "A", "B", …. The same letter with a number ("C1", "C2") is a superset; one
+   * letter for every station is a circuit.
+   */
+  block: string;
+  role: V2WorkoutRole;
   sets: number;
-  /** e.g. "6-8". */
-  reps: string;
+  /** Circuits only: rounds through the circuit. */
+  rounds?: number;
+  /** e.g. "6-8". Timed work has `durationSeconds` instead. */
+  reps?: string;
+  durationSeconds?: number;
+  /** Reps or seconds are for each side. */
+  perSide: boolean;
   restSeconds: number;
+  /** Reps in reserve: end each set this many reps short of failure. */
+  rir?: number;
+  /** e.g. "3-0-1-0": seconds lowering, pause, lifting, pause. */
+  tempo?: string;
+  /** e.g. "70–80% of 1RM". */
+  load?: string;
   note?: string;
-  /** Programs only, e.g. "RPE 8". */
-  intensity?: string;
-  /** Generator only: the requested `bodyFocus` values this exercise covers. */
-  matchedFocus?: string[];
+}
+
+/** One exercise of a generated session. */
+export interface WorkoutExerciseV2 extends WorkoutPrescriptionV2 {
+  /**
+   * Movement pattern, e.g. "squat", "hinge", "push_horizontal", "push_vertical",
+   * "pull_horizontal", "pull_vertical", "lunge", "chest_fly", "shoulder_iso",
+   * "rear_delt", "biceps", "triceps", "core_stability", "cardio", "stretch", "yoga".
+   */
+  pattern: string;
+  /** The first form tip, or null. */
+  cue: string | null;
+  /** Why it is in the session, e.g. "Main lift: squat for the quadriceps and glutes." */
+  rationale: string;
+  alternatives: WorkoutAlternativeV2[];
   /** A full v2 exercise with media links. */
   exercise: ExerciseV2;
 }
 
-/** Warm-up or cool-down step. */
+/** A warm-up or cool-down item of a generated session. */
 export interface WorkoutStepV2 {
-  activity: string;
-  durationMinutes: number;
+  durationSeconds: number;
+  /** `durationSeconds` is for each side. */
+  perSide: boolean;
   note: string;
+  /** A full v2 exercise with media links. */
+  exercise: ExerciseV2;
 }
 
-/** A generated workout: the v1 response plus `model`, built from v2 exercises. */
+export interface WorkoutWarmupV2 {
+  minutes: number;
+  /** Ramp-up sets before the first main lift, e.g. "Before Barbell Full Squat: 2 ramp-up sets at …". */
+  rampUp?: string;
+  items: WorkoutStepV2[];
+}
+
+export interface WorkoutCooldownV2 {
+  minutes: number;
+  items: WorkoutStepV2[];
+}
+
+/** Totals for a generated session. */
+export interface WorkoutSummaryV2 {
+  totalExercises: number;
+  /** Sets times rounds, over every exercise. */
+  workingSets: number;
+  /** Movement patterns in the session, in order. */
+  patterns: string[];
+  /** Sets per muscle group, most first (secondary muscles count half). */
+  muscles: { group: string; sets: number }[];
+}
+
+/** Circuit timing; present when `format` is "circuit". */
+export interface WorkoutCircuitV2 {
+  rounds: number;
+  workSeconds: number;
+  restSeconds: number;
+  restBetweenRoundsSeconds: number;
+}
+
+/** A session from `/v2/workout/generate`, built from movement patterns. */
 export interface WorkoutV2 {
-  goal: string;
-  level: string;
+  goal: V2WorkoutGoal;
+  level: V2WorkoutLevel;
   model: "male" | "female";
   /** Pass it back as `seed` to get the same workout. */
   seed: string;
+  /** The template used, e.g. "full_body"; "custom" for `bodyFocus`. */
   split: string;
-  bodyFocus: string[];
-  resolvedBodyFocus: string[];
-  equipment: string[];
-  /** Present when the request was too narrow and constraints were loosened. */
-  filtersRelaxed?: string[];
-  /** Present when requested focus values got no exercise. */
-  bodyFocusUncovered?: string[];
-  totalExercises: number;
+  format: V2WorkoutResolvedFormat;
+  targetDurationMinutes: number;
   estimatedDurationMinutes: number;
-  warmup: WorkoutStepV2[];
+  /** Equipment allowed, or ["any"] for a full gym. */
+  equipment: string[];
+  /** The joints you asked to protect. */
+  avoidJoints?: V2WorkoutJoint[];
+  /** Present when `format` is "circuit". */
+  circuit?: WorkoutCircuitV2;
+  summary: WorkoutSummaryV2;
+  warmup: WorkoutWarmupV2;
   exercises: WorkoutExerciseV2[];
-  cooldown: WorkoutStepV2[];
+  cooldown: WorkoutCooldownV2;
+  /** e.g. joint-care guidance, or why nothing fit the filters. */
+  notes?: string[];
   [key: string]: unknown;
+}
+
+/** One training day of the weekly schedule. */
+export interface ProgramScheduleDayV2 {
+  day: number;
+  /** "Monday" … "Sunday". */
+  weekday: string;
+  /** The session template, "A", "B", …. */
+  session: string;
+  /** e.g. "Upper (horizontal push and pull)". */
+  name: string;
+}
+
+export interface ProgramProgressionV2 {
+  name: string;
+  summary: string;
+  /** How to progress from session to session. */
+  rule: string;
+  /** Weeks per block (a deload week ends each block), or null when the program has no deloads. */
+  deloadEvery: number | null;
+}
+
+export interface ProgramBlockV2 {
+  block: number;
+  weeks: number[];
+  /** "Foundation" or "Progression"; strength programs: "Volume", "Strength" or "Peak". */
+  focus: string;
+  deloadWeek?: number;
+}
+
+/** Weekly working sets for a muscle group in a normal week, against a target range. */
+export interface ProgramVolumeV2 {
+  group: string;
+  sets: number;
+  /** [low, high] sets per week. */
+  target: [number, number];
+  status: "low" | "ok" | "high";
+}
+
+/** A warm-up or cool-down item of a program session. `exerciseId` is in `exerciseLibrary`. */
+export interface ProgramStepV2 {
+  exerciseId: string;
+  name: string;
+  durationSeconds: number;
+  perSide: boolean;
+  note: string;
+}
+
+/** An exercise of a session template. Week-by-week prescriptions are in `program`. */
+export interface ProgramSessionExerciseV2 {
+  order: number;
+  block: string;
+  role: V2WorkoutRole;
+  pattern: string;
+  /** In `exerciseLibrary`. */
+  exerciseId: string;
+  name: string;
+  cue: string | null;
+  rationale: string;
+  alternatives: WorkoutAlternativeV2[];
+}
+
+/** A session template ("A", "B", …) of a program. */
+export interface ProgramSessionV2 {
+  session: string;
+  name: string;
+  split: string;
+  /** Fat-loss and endurance programs mix strength days and conditioning circuits. */
+  goal: V2WorkoutGoal;
+  format: V2WorkoutResolvedFormat;
+  estimatedDurationMinutes: number;
+  warmup: { minutes: number; rampUp?: string; items: ProgramStepV2[] };
+  cooldown: { minutes: number; items: ProgramStepV2[] };
+  exercises: ProgramSessionExerciseV2[];
+  notes?: string[];
+}
+
+/**
+ * One exercise of a program day: this week's prescription. `exerciseId` is in
+ * `exerciseLibrary`; accessories can rotate to an alternative from block 2.
+ */
+export interface ProgramExerciseV2 extends WorkoutPrescriptionV2 {
+  exerciseId: string;
+  name: string;
 }
 
 /** One training day of a program week. */
 export interface ProgramDayV2 {
   day: number;
-  /** The split day, e.g. "push". */
-  focus: string;
-  exercises: WorkoutExerciseV2[];
+  weekday: string;
+  session: string;
+  name: string;
+  exercises: ProgramExerciseV2[];
 }
 
 /** One week of a program. */
 export interface ProgramWeekV2 {
   week: number;
-  phase: "accumulation" | "intensification" | "deload";
-  /** e.g. "RPE 7". */
-  intensity: string;
+  block: number;
+  phase: "accumulation" | "intensification" | "deload" | "test";
   deload: boolean;
   guidance: string;
   days: ProgramDayV2[];
 }
 
-/** A multi-week program: the v1 response plus `model`, built from v2 exercises. */
+/**
+ * A multi-week program from `/v2/workout/program`: session templates,
+ * periodised weeks with deloads, and every exercise once in `exerciseLibrary`.
+ */
 export interface ProgramV2 {
-  goal: string;
-  level: string;
+  goal: V2WorkoutGoal;
+  level: V2WorkoutLevel;
   model: "male" | "female";
+  /** Pass it back as `seed` to get the same program. */
+  seed: string;
   weeks: number;
   daysPerWeek: number;
-  /** One focus per training day, e.g. ["push", "pull", "legs"]. */
-  split: string[];
-  equipment: string[];
-  progressionModel: string;
   sessionDurationMinutes: number;
+  /** Equipment allowed, or ["any"] for a full gym. */
+  equipment: string[];
+  avoidJoints?: V2WorkoutJoint[];
+  schedule: ProgramScheduleDayV2[];
+  progressionModel: ProgramProgressionV2;
+  blocks: ProgramBlockV2[];
+  /** Empty for goals without volume targets. */
+  weeklyVolume: ProgramVolumeV2[];
+  sessions: ProgramSessionV2[];
   program: ProgramWeekV2[];
+  /** Every exercise used above, once, as a full v2 exercise with media links. */
+  exerciseLibrary: ExerciseV2[];
   [key: string]: unknown;
 }
 
@@ -364,7 +569,7 @@ const REFRESH_MARGIN_MS = 5 * 60 * 1000;
 
 /** Access to `/v2/*`: the new exercise catalog with signed media links. */
 export class V2Resource {
-  /** `/v2/workout/*`: workout generator and multi-week programs on v2 exercises. */
+  /** `/v2/workout/*`: sessions and multi-week programs on v2 exercises. */
   readonly workout: V2WorkoutResource;
   /** `/v2/supplements/*`: supplements, stacks and picks for a v2 exercise. */
   readonly supplements: V2SupplementsResource;
@@ -434,7 +639,8 @@ export class V2Resource {
 
   /**
    * Links you can use right now. Reuses links fetched earlier (by list, get,
-   * media, similar, alternatives, workout.generate and workout.program) until
+   * media, similar, alternatives, workout.generate and workout.program, including
+   * warm-up and cool-down exercises and a program's `exerciseLibrary`) until
    * they are close to expiry, then fetches new ones. Call this when you
    * display an exercise.
    */
@@ -461,8 +667,10 @@ export class V2Resource {
 }
 
 /**
- * `/v2/workout/*`: the workout generator on v2 exercises. Every `exercise` in a
- * result is a full v2 exercise with media links; `v2.freshMedia` reuses them.
+ * `/v2/workout/*`: sessions and multi-week programs built from movement
+ * patterns on v2 exercises. The media links of every full exercise in a result
+ * (session exercises, warm-up and cool-down items, a program's
+ * `exerciseLibrary`) are kept for `v2.freshMedia`.
  */
 export class V2WorkoutResource {
   constructor(
@@ -470,30 +678,36 @@ export class V2WorkoutResource {
     private readonly remember: (e: ExerciseV2 | null | undefined) => void,
   ) {}
 
-  /** Generate a single workout (Growth, Scale; legacy Pro and Ultra). */
+  /**
+   * Generate one session (Growth, Scale; legacy Pro and Ultra): warm-up, main
+   * work in straight sets, supersets or a circuit, and cool-down.
+   */
   async generate(params: V2WorkoutGenerateParams = {}): Promise<WorkoutV2> {
     const workout = await this.http.request<WorkoutV2>("/v2/workout/generate", {
       query: {
         ...params,
         equipment: csv(params.equipment),
         bodyFocus: csv(params.bodyFocus),
+        avoidJoints: csv(params.avoidJoints),
         exclude: csv(params.exclude),
       },
     });
-    for (const e of workout.exercises ?? []) this.remember(e.exercise);
+    for (const x of workout.exercises ?? []) this.remember(x.exercise);
+    for (const step of workout.warmup?.items ?? []) this.remember(step.exercise);
+    for (const step of workout.cooldown?.items ?? []) this.remember(step.exercise);
     return workout;
   }
 
-  /** Generate a multi-week program (Scale; legacy Ultra). */
+  /**
+   * Generate a multi-week program (Scale; legacy Ultra): session templates,
+   * periodised weeks with deloads, and every exercise once in `exerciseLibrary`.
+   * Exercises in `sessions` and `program` reference the library by `exerciseId`.
+   */
   async program(params: V2WorkoutProgramParams = {}): Promise<ProgramV2> {
     const program = await this.http.request<ProgramV2>("/v2/workout/program", {
-      query: { ...params, equipment: csv(params.equipment) },
+      query: { ...params, equipment: csv(params.equipment), avoidJoints: csv(params.avoidJoints) },
     });
-    for (const week of program.program ?? []) {
-      for (const day of week.days ?? []) {
-        for (const e of day.exercises ?? []) this.remember(e.exercise);
-      }
-    }
+    for (const e of program.exerciseLibrary ?? []) this.remember(e);
     return program;
   }
 }
