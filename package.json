@@ -1,6 +1,6 @@
 {
   "name": "@workoutx/sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Official TypeScript/JavaScript SDK for the WorkoutX API — exercises, GIFs, workouts, supplements, and body scan.",
   "license": "MIT",
   "author": "WorkoutX",

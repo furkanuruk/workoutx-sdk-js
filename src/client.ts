@@ -83,7 +83,7 @@ export class WorkoutX {
       getBearer: () => this.getBearerToken(),
       timeout: opts.timeout ?? 30_000,
       maxRetries: opts.maxRetries ?? 2,
-      defaultHeaders: { "User-Agent": "workoutx-sdk-js/0.1.0", ...opts.headers },
+      defaultHeaders: { "User-Agent": "workoutx-sdk-js/0.2.0", ...opts.headers },
       fetch: fetchImpl.bind(globalThis),
     });
 
